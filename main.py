@@ -43,6 +43,8 @@ def evaluate(test_data, model):
             ax2.plot(images.detach().numpy(), labels.detach().numpy(), 'o', )
         plt.show()
 
+
+# pretty sure this is broken
 def sum_of_products_naive(path, L, weights, sum = 0):
     #print(path, L, total)
     if L == 0: # reached the end of the path
@@ -57,13 +59,34 @@ def sum_of_products_naive(path, L, weights, sum = 0):
         return sop
 
 
+#returns the coordinates and weight of the smallest weight
+def sum_of_products_backwards(weights):
+    # names weights <layer weight is reaching towards> <after> <before>
+    sops = {}
+    for l_index, layer in enumerate(weights):
+        for a_index, after in enumerate(layer):
+            for b_index, weight in enumerate(after):
+                if l_index == 0:
+                    sops.update({str(l_index) + str(a_index) + str(b_index) : weight})
+                else:
+                    sum = 0
+
+                    # add to the sum all the weights which have a before value equal
+                    # to this weight's after value
+                    for index, _ in enumerate(weights[l_index-1]):
+                        sum += sops[str(l_index-1) + str(index) + str(a_index)]
+                    
+                    # print(str(l_index) + str(a_index) + str(b_index), weight, sum)
+                    sops.update({str(l_index) + str(a_index) + str(b_index) : weight * sum})
+    return sops['201']
+
 def prune(model):
     weights = []
     for index, layer in enumerate(model.parameters()):
         if index % 2 == 0:
             weights.append(layer)
     weights.reverse() # So that the final layer is layer 0
-    print('result:',sum_of_products_naive([(0,0)], 7, weights)) # In between the nodes in arg 1, reaching towards the layer arg 2
+    print(sum_of_products_backwards(weights))
 
 def main(doPruning = False):
     model = Classifier()
