@@ -1,6 +1,5 @@
 from matplotlib import pyplot as plt
 from torch.autograd import Variable
-import numpy as np
 from dataprocess import load_data
 from model import Classifier
 from torch import nn, optim
@@ -10,7 +9,7 @@ import torch.utils.data
 
 PATH = 'purning_test.pt'
 
-epoch_number = 300
+epoch_number = 100
 num_iterations = 4
 percent = 0.01
 learning_rate = 0.03
@@ -33,12 +32,9 @@ def train(train_data, model, criterion, optimizer):
         loss = criterion(outputs, labels)
         loss.backward()
         # Freeze pruned weights
-        for name, p in model.named_parameters():
+        for name, param in model.named_parameters():
             if 'weight' in name:
-                tensor = p.data.cpu().numpy()
-                grad_tensor = p.grad.data.cpu().numpy()
-                grad_tensor = np.where(tensor == 0, 0, grad_tensor)
-                p.grad.data = torch.from_numpy(grad_tensor).to(device)
+                param.grad.data = torch.where(param.data.double() == 0., 0., param.grad.data.double())
         optimizer.step()
         loss_counter += loss.data.item()
     return loss_counter
@@ -101,12 +97,12 @@ def prune(model, prune_rate, index):
             parsed_index = [int(i) for i in parsed_index]
             weights[parsed_index[0]][parsed_index[1]][parsed_index[2]] = 0  # set weight to 0
 
-def main(doPruning=True):
+
+def main(doPruning=False):
     model = Classifier()
     train_data, test_data = load_data()
     if doPruning:
-        # model.load_state_dict(torch.load(PATH))
-        # foobar_unstructured(model.linear3, name='weight')
+        model.load_state_dict(torch.load(PATH))
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
             prune(model, prune_rate, i)
@@ -146,4 +142,4 @@ def count_zero_weights(model):
 
 
 if __name__ == "__main__":
-    main(doPruning=True)
+    main(doPruning=False)
