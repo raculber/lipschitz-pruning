@@ -9,22 +9,22 @@ class Classifier(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(1, 10, ),
             nn.ReLU(),
-            nn.Linear(10,20),
+            nn.Linear(10, 20),
             nn.ReLU(),
-            nn.Linear(20,40),
+            nn.Linear(20, 40),
             nn.ReLU(),
             nn.Linear(40, 80),
             nn.ReLU(),
-            nn.Linear(80,80),
+            nn.Linear(80, 80),
             nn.ReLU(),
-            nn.Linear(80,80),
+            nn.Linear(80, 80),
             nn.ReLU(),
-            nn.Linear(80,40),
+            nn.Linear(80, 40),
             nn.ReLU(),
-            nn.Linear(40,20),
+            nn.Linear(40, 20),
             nn.ReLU(),
-            nn.Linear(20,1)
-            )
+            nn.Linear(20, 1)
+        )
 
     def forward(self, x):
         return self.layers(x)

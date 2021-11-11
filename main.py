@@ -1,7 +1,7 @@
 from matplotlib import pyplot as plt
 from torch.autograd import Variable
 from dataprocess import load_data
-from models import classifier, lenet5
+from models import classifier, lenet5, vgg16
 from torch import nn, optim
 from torchvision import datasets
 from tqdm import tqdm
@@ -12,8 +12,8 @@ import torch.utils.data
 
 PATH = 'purning_test.pt'
 LENET5_PATH = 'trained_lenet5.pt'
-
-epoch_number = 5
+VGG16_PATH = 'trained_vgg16.pt'
+epoch_number = 1
 num_iterations = 6
 percent = 0.01
 learning_rate = 0.03
@@ -135,7 +135,7 @@ def sum_of_products_backwards(weights):
 def prune(model, prune_rate):
     weights = []
     for name, layer in model.named_parameters():
-        if 'weight' in name:
+        if 'weight' in name and 'fc' in name:
             weights.append(layer)
     weights.reverse()  # So that the final layer is layer 0
     # key: coordinates of weight, value: sum of products
@@ -148,18 +148,22 @@ def prune(model, prune_rate):
     prune_end_index = int(prune_rate * len(sop_dict))
     prune_indices = list(sop_dict)[:prune_end_index]
     with torch.no_grad():
-        # this is a good lead: https://www.py4u.net/discuss/254455
         for i in prune_indices:
             parsed_index = i.split(',')
             parsed_index = [int(i) for i in parsed_index]
             weights[parsed_index[0]][parsed_index[1]][parsed_index[2]] = 0  # set weight to 0
 
 
-def main(doPruning=True, model_name="LeNet5"):
+def main(doPruning=False, model_name="VGG16"):
     if model_name == "LeNet5":
         model = lenet5.LeNet5(num_classes=10)
         train_data = mnist_train_loader
         test_data = mnist_test_loader
+        criterion = nn.CrossEntropyLoss()
+    elif model_name == "VGG16":
+        model = vgg16.VGG16(num_classes=10)
+        train_data = cifar_train_loader
+        test_data = cifar_test_loader
         criterion = nn.CrossEntropyLoss()
     else:
         model = classifier.Classifier()
@@ -168,37 +172,42 @@ def main(doPruning=True, model_name="LeNet5"):
     if doPruning:
         if model_name == "LeNet5":
             model.load_state_dict(torch.load(LENET5_PATH))
+        elif model_name == "VGG16":
+            model.load_state_dict(torch.load(VGG16_PATH))
         else:
             model.load_state_dict(torch.load(PATH))
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
-            prune(model, prune_rate, model_name)
+            prune(model, prune_rate)
             print('Iteration ' + str(i))
             print("Prune rate " + str(prune_rate))
             print('Zero weights ' + str(count_zero_weights(model)))
             optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-            if model_name == "LeNet5":
+            if model_name == "LeNet5" or model_name == "VGG16":
                 old_cost = train_cnn(train_data, model, criterion, optimizer)
             else:
                 old_cost = train(train_data, model, criterion, optimizer)
             for epoch in range(1, epoch_number + 1):
-                new_cost = train_cnn(train_data, model, criterion, optimizer)
+                if model_name == "LeNet5" or model_name == "VGG16":
+                    new_cost = train_cnn(train_data, model, criterion, optimizer)
+                else:
+                    new_cost = train(train_data, model, criterion, optimizer)
                 if abs((new_cost - old_cost)) / new_cost < epsi:
                     break
                 old_cost = new_cost
             print('Zero weights After training ' + str(count_zero_weights(model)))
-            if model_name == "LeNet5":
+            if model_name == "LeNet5" or model_name == "VGG16":
                 evaluate_cnn(test_data, model)
             else:
                 evaluate(test_data, model)
     else:
         optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-        if model_name == "LeNet5":
+        if model_name == "LeNet5" or model_name == "VGG16":
             old_cost = train_cnn(train_data, model, criterion, optimizer)
         else:
             old_cost = train(train_data, model, criterion, optimizer)
         for _ in tqdm(range(1, epoch_number + 1)):
-            if model_name == "LeNet5":
+            if model_name == "LeNet5" or model_name == "VGG16":
                 new_cost = train_cnn(train_data, model, criterion, optimizer)
             else:
                 new_cost = train(train_data, model, criterion, optimizer)
@@ -208,6 +217,9 @@ def main(doPruning=True, model_name="LeNet5"):
         if model_name == "LeNet5":
             evaluate_cnn(test_data, model)
             torch.save(model.state_dict(), LENET5_PATH)
+        elif model_name == "VGG16":
+            evaluate_cnn(test_data, model)
+            torch.save(model.state_dict(), VGG16_PATH)
         else:
             evaluate(test_data, model)
             torch.save(model.state_dict(), PATH)
@@ -222,4 +234,12 @@ def count_zero_weights(model):
 
 
 if __name__ == "__main__":
-    main(doPruning=True, model_name="LeNet5")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lr", default=0.03, type=float, description="Learning Rate")
+    parser.add_argument("--batch_size", default=64, type=int, description="Batch Size")
+    parser.add_argument("--num_prune_iterations", default=6, type=int, description='Number of iterations to prune')
+    parser.add_argument("--dataset", default="mnist", type=str, description='Dataset')
+    parser.add_argument("--model", default="lenet5", type=str)
+    parser.add_argument("--percent_to_prune", default=10, type=int)
+    args = parser.parse_args()
+    main(doPruning=False, model_name="VGG16")
