@@ -135,7 +135,7 @@ def sum_of_products_backwards(weights):
 def prune(model, prune_rate):
     weights = []
     for name, layer in model.named_parameters():
-        if 'weight' in name and 'fc' in name:
+        if 'weight' in name:
             weights.append(layer)
     weights.reverse()  # So that the final layer is layer 0
     # key: coordinates of weight, value: sum of products
@@ -172,7 +172,7 @@ def main(doPruning=True, model_name="LeNet5"):
             model.load_state_dict(torch.load(PATH))
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
-            prune(model, prune_rate)
+            prune(model, prune_rate, model_name)
             print('Iteration ' + str(i))
             print("Prune rate " + str(prune_rate))
             print('Zero weights ' + str(count_zero_weights(model)))
