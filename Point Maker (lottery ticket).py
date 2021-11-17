@@ -1,7 +1,7 @@
 import numpy as np
 import math
 
-number_of_points = 10000
+number_of_points = 2000
 
 
 def function_calculator(x):

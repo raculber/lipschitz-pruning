@@ -11,7 +11,6 @@ import torch.utils.data
 from pruningMethod import myFavoritePruningMethod
 import numpy as np
 
-
 PATH = 'purning_test.pt'
 
 epoch_number = 300
@@ -24,13 +23,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 transform = transforms.Compose(
     [transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
+
 def train(train_data, model, criterion, optimizer):
     loss_counter = 0.0
     for i, (images, labels) in enumerate(train_data):
         images = Variable(images).float()
         labels = Variable(labels).float()
-        labels = labels.view(labels.shape[0],-1)
-        images = images.view(images.shape[0],-1)
+        labels = labels.view(labels.shape[0], -1)
+        images = images.view(images.shape[0], -1)
         optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, labels)
@@ -39,13 +39,14 @@ def train(train_data, model, criterion, optimizer):
         loss_counter += loss.data.item()
     return loss_counter
 
+
 def evaluate(test_data, model):
     with torch.no_grad():
         for i, (images, labels) in enumerate(test_data):
             images = Variable(images).float()
             labels = Variable(labels).float()
-            labels = labels.view(labels.shape[0],-1)
-            images = images.view(images.shape[0],-1)
+            labels = labels.view(labels.shape[0], -1)
+            images = images.view(images.shape[0], -1)
             outputs = model(images)
             fig, (ax1, ax2) = plt.subplots(2, 1)
             ax1.plot(images.detach().numpy(), outputs.detach().numpy(), 'o')
@@ -56,7 +57,7 @@ def evaluate(test_data, model):
 def sum_of_products_backwards(weights):
     # names weights <layer weight is reaching towards> <after> <before> <flat index>
     sops = {}
-    toFlat = {} # Key : 3d indecies, value : flat indecies
+    toFlat = {}  # Key : 3d indecies, value : flat indecies
     flat_index = -1
     for l_index, layer in enumerate(weights):
         for a_index, after in enumerate(layer):
@@ -75,9 +76,10 @@ def sum_of_products_backwards(weights):
                     # print(str(l_index) + str(a_index) + str(b_index), weight, sum)
                     sops.update({str(l_index) + ',' + str(a_index) + ',' + str(b_index): weight * sum})
                     toFlat.update({str(l_index) + ',' + str(a_index) + ',' + str(b_index): flat_index})
-                    
+
     sops = dict(sorted(sops.items(), key=lambda item: item[1]))
     return sops, toFlat
+
 
 def pruneModel(model, prune_rate):
     parametersToPrune = (
@@ -106,14 +108,14 @@ def pruneModel(model, prune_rate):
     prune_indices = list(sop_dict)[:prune_end_index]
     prune_indices = [toFlat[_] for _ in prune_indices]
 
-    mask = torch.ones(21030) #TODO: Un-hardcode this value
+    mask = torch.ones(21030)  # TODO: Un-hardcode this value
 
     for idx in prune_indices:
         mask[idx] = 0
 
     torch.nn.utils.prune.global_unstructured(
         parametersToPrune,
-        pruning_method=myFavoritePruningMethod, Mask = mask #TODO: move mask calculation to this function
+        pruning_method=myFavoritePruningMethod, Mask=mask  # TODO: move mask calculation to this function
     )
 
     for parameter in parametersToPrune:
@@ -139,6 +141,7 @@ def main():
         old_cost = new_cost
     evaluate(test_data, model)
     torch.save(model.state_dict(), PATH)
+
 
 if __name__ == "__main__":
     main()
