@@ -133,7 +133,7 @@ def training_loop(train_data, test_data, model, criterion, num_iterations):
         old_cost = train_cnn(train_data, model, criterion, optimizer)
     else:
         old_cost = train(train_data, model, criterion, optimizer)
-    for _ in tqdm(range(1, args.epoch_number)):
+    for _ in tqdm(range(1, args.epochs)):
         if args.arch == "lenet5" or args.arch == "vgg16" or args.arch == "alexnet":
             new_cost = train_cnn(train_data, model, criterion, optimizer)
         else:
@@ -221,7 +221,9 @@ def main():
     if args.train == 'true':
         training_loop(train_data, test_data, model=model, criterion=criterion,
                       num_iterations=num_iterations)
+        torch.save(model.state_dict(), path)
     model.load_state_dict(torch.load(path))
+    total_weights = count_total_weights(model)
     if args.method == 'magnitude':
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
@@ -242,25 +244,24 @@ def main():
             print('Iteration ' + str(i))
             print("Prune rate " + str(prune_rate))
             print('Zero weights ' + str(count_zero_weights(model)))
+            print("Total Weights " + str(count_total_weights(model)))
             training_loop(train_data, test_data, model=model, criterion=criterion,
                           num_iterations=num_iterations)
-            print('Zero Weights After training ' + str(count_zero_weights(model)))
-            print("Total Weights " + str(count_total_weights(model)))
-    torch.save(model.state_dict(), path)
+    # torch.save(model.state_dict(), path)
 
 
 def count_zero_weights(model):
     zeros = 0
-    for param in model.parameters():
-        if param is not None:
-            zeros += torch.sum((param == 0).int()).data.item()
+    for name, layer in model.named_parameters():
+        if layer is not None and 'weight' in name and 'fc' in name:
+            zeros += torch.sum((layer == 0).int()).data.item()
     return zeros
 
 
 def count_total_weights(model):
     weight_sum = 0
     for name, layer in model.named_parameters():
-        if not layer.requires_grad:
+        if 'weight' in name and 'fc' in name:
             num_weights = layer.numel()
             weight_sum += num_weights
     return weight_sum
