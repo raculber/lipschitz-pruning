@@ -1,45 +1,42 @@
 from matplotlib import pyplot as plt
 from torch.autograd import Variable
-from dataprocess import load_data
-from models import classifier, lenet5, vgg16
+from data_helper import load_data
+import torch.nn.utils.prune as pytorch_prune
+from models import classifier, lenet5, vgg16, alexnet
 from torch import nn, optim
-from torchvision import datasets
 from tqdm import tqdm
 import argparse
 import torch
-import torchvision.transforms as transforms
 import torch.utils.data
 
-PATH = 'purning_test.pt'
+CLASSIFIER_PATH = 'pruning_test.pt'
 LENET5_PATH = 'trained_lenet5.pt'
 VGG16_PATH = 'trained_vgg16.pt'
-epoch_number = 100
-num_iterations = 6
+ALEXNET_PATH = 'trained_alexnet.pt'
+
+epoch_number = 5
 percent = 0.01
-learning_rate = 0.01
+learning_rate = 0.2
 batch_size = 64
 epsi = 0.000000001
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-transform = transforms.Compose(
-    [transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
-mnist_transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor()])
-
-cifar_train_dataset = datasets.CIFAR10(root="./data", download=True, train=True, transform=transform)
-
-cifar_test_dataset = datasets.CIFAR10(root="./data", download=True, train=False, transform=transform)
-
-cifar_train_loader = torch.utils.data.DataLoader(cifar_train_dataset, batch_size=batch_size, shuffle=True)
-
-cifar_test_loader = torch.utils.data.DataLoader(cifar_test_dataset, batch_size=batch_size, shuffle=False)
-
-mnist_train_dataset = datasets.MNIST(root="./data", download=True, train=True, transform=mnist_transform)
-
-mnist_test_dataset = datasets.MNIST(root="./data", download=True, train=False, transform=mnist_transform)
-
-mnist_train_loader = torch.utils.data.DataLoader(mnist_train_dataset, batch_size=batch_size, shuffle=True)
-
-mnist_test_loader = torch.utils.data.DataLoader(mnist_test_dataset, batch_size=batch_size, shuffle=False)
+parser = argparse.ArgumentParser()
+parser.add_argument('--arch', default='lenet5', choices=['vgg16', 'classifier', 'lenet5', 'alexnet'],
+                    help='Architecture: vgg16 | classifier | lenet5 | alexnet default: lenet5 ')
+parser.add_argument('--batchsize', type=int, default=64, help='Batch Size')
+parser.add_argument('--epochs', type=int, default=300,
+                    help='Number of epochs to train')
+parser.add_argument('--method', default='custom', choices=['custom', 'magnitude'],
+                    help='Method used to prune:'
+                         'custom | none | '
+                         'magnitude default: custom')
+parser.add_argument('--iterations', type=int, default=10,
+                    help='Number of iterations to prune model')
+parser.add_argument('--train', default='false', choices=['false', 'true'],
+                    help='Train model initially before pruning: '
+                         'true | false')
+args = parser.parse_args()
 
 
 def train(train_data, model, criterion, optimizer):
@@ -80,7 +77,7 @@ def train_cnn(train_data, model, criterion, optimizer):
     return loss_counter
 
 
-def evaluate(test_data, model, pruningMethod):
+def evaluate(test_data, model, pruningMethod, num_iterations):
     with torch.no_grad():
         for i, (images, labels) in enumerate(test_data):
             images = Variable(images).float()
@@ -104,7 +101,7 @@ def evaluate(test_data, model, pruningMethod):
         plt.text(-0.225, 0.7,
                  'Results \n' +
                  'Method: ' + pruningMethod + '\n' +
-                 'num epochs: ' + str(epoch_number) + '\n' +
+                 'num epochs: ' + str(args.epochs) + '\n' +
                  'pruning iterations: ' + str(num_iterations) + '\n' +
                  'initial pruning rate: ' + str(percent) + '\n' +
                  'learning rate: ' + str(learning_rate) + '\n' +
@@ -130,29 +127,24 @@ def evaluate_cnn(test_data, model):
         print(accuracy)
 
 
-def training_loop(train_data, test_data, model_name, model, criterion, method):
+def training_loop(train_data, test_data, model, criterion, num_iterations):
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    if model_name == "lenet5" or model_name == "vgg16":
+    if args.arch == "lenet5" or args.arch == "vgg16" or args.arch == "alexnet":
         old_cost = train_cnn(train_data, model, criterion, optimizer)
     else:
         old_cost = train(train_data, model, criterion, optimizer)
-    for _ in tqdm(range(1, epoch_number + 1)):
-        if model_name == "lenet5" or model_name == "vgg16":
+    for _ in tqdm(range(1, args.epoch_number)):
+        if args.arch == "lenet5" or args.arch == "vgg16" or args.arch == "alexnet":
             new_cost = train_cnn(train_data, model, criterion, optimizer)
         else:
             new_cost = train(train_data, model, criterion, optimizer)
         if abs((new_cost - old_cost)) / new_cost < epsi:
             break
         old_cost = new_cost
-    if model_name == "lenet5":
+    if args.arch == "lenet5" or args.arch == "vgg16" or args.arch == "alexnet":
         evaluate_cnn(test_data, model)
-        torch.save(model.state_dict(), LENET5_PATH)
-    elif model_name == "vgg16":
-        evaluate_cnn(test_data, model)
-        torch.save(model.state_dict(), VGG16_PATH)
     else:
-        evaluate(test_data, model, pruningMethod=method)
-        torch.save(model.state_dict(), PATH)
+        evaluate(test_data, model, pruningMethod=args.method, num_iterations=num_iterations)
 
 
 def sum_of_products_backwards(weights):
@@ -161,11 +153,19 @@ def sum_of_products_backwards(weights):
     for l_index, layer in enumerate(weights):
         for a_index, after in enumerate(layer):
             for b_index, weight in enumerate(after):
+                weight = abs(weight)
+                if l_index == 3:
+                    print(l_index)
+                    print(weight.shape)
+                    print(weight)
+                if l_index == 4:
+                    print(l_index)
+                    print(weight.shape)
+                    print(weight)
                 if l_index == 0:
                     sops.update({str(l_index) + ',' + str(a_index) + ',' + str(b_index): weight})
                 else:
                     sum = 0
-                    # print(weight.shape)
 
                     # add to the sum all the weights which have a before value equal
                     # to this weight's after value
@@ -180,9 +180,8 @@ def sum_of_products_backwards(weights):
 def prune(model, prune_rate):
     weights = []
     for name, layer in model.named_parameters():
-        if 'weight' in name:
+        if 'weight' in name and 'fc' in name:
             weights.append(layer)
-    # print(weights)
     weights.reverse()  # So that the final layer is layer 0
     # key: coordinates of weight, value: sum of products
     sop_dict = sum_of_products_backwards(weights)
@@ -200,54 +199,54 @@ def prune(model, prune_rate):
             weights[parsed_index[0]][parsed_index[1]][parsed_index[2]] = 0  # set weight to 0
 
 
-def main(arguments):
-    print(arguments)
-    if arguments.arch == "lenet5":
+def main():
+    num_iterations = args.iterations
+    if args.arch == "lenet5":
         model = lenet5.LeNet5(num_classes=10)
-        train_data = mnist_train_loader
-        test_data = mnist_test_loader
+        path = LENET5_PATH
         criterion = nn.CrossEntropyLoss()
-    elif arguments.arch == "vgg16":
+    elif args.arch == "vgg16":
         model = vgg16.VGG16(num_classes=10)
-        train_data = cifar_train_loader
-        test_data = cifar_test_loader
+        path = VGG16_PATH
+        criterion = nn.CrossEntropyLoss()
+    elif args.arch == "alexnet":
+        model = alexnet.AlexNet(num_classes=10)
+        path = ALEXNET_PATH
         criterion = nn.CrossEntropyLoss()
     else:
+        path = CLASSIFIER_PATH
         model = classifier.Classifier()
-        train_data, test_data = load_data()
         criterion = nn.MSELoss()
-    if arguments.train == 'true':
-        training_loop(train_data, test_data, model_name=arguments.arch, model=model, criterion=criterion,
-                      method=arguments.method)
-    if arguments.arch == "lenet5":
-        model.load_state_dict(torch.load(LENET5_PATH))
-    elif arguments.arch == "vgg16":
-        model.load_state_dict(torch.load(VGG16_PATH))
-    else:
-        model.load_state_dict(torch.load(PATH))
-    if arguments.method == 'magnitude':
+    train_data, test_data = load_data(args)
+    if args.train == 'true':
+        training_loop(train_data, test_data, model=model, criterion=criterion,
+                      num_iterations=num_iterations)
+    model.load_state_dict(torch.load(path))
+    if args.method == 'magnitude':
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
             for module in model.named_modules():
                 if isinstance(module[1], nn.Linear):
-                    prune.l1_unstructured(module[1], 'weight', prune_rate)
-                    prune.remove(module[1], 'weight')
+                    pytorch_prune.l1_unstructured(module[1], 'weight', prune_rate)
+                    pytorch_prune.remove(module[1], 'weight')
             print('Iteration ' + str(i))
             print("Prune rate " + str(prune_rate))
             print('Zero weights ' + str(count_zero_weights(model)))
-            training_loop(train_data, test_data, model_name=arguments.arch, model=model, criterion=criterion,
-                          method=arguments.method)
+            training_loop(train_data, test_data, model=model, criterion=criterion,
+                          num_iterations=num_iterations)
             print('Zero weights After training ' + str(count_zero_weights(model)))
-    elif arguments.method == 'custom':
+    elif args.method == 'custom':
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
             prune(model, prune_rate)
             print('Iteration ' + str(i))
             print("Prune rate " + str(prune_rate))
             print('Zero weights ' + str(count_zero_weights(model)))
-            training_loop(train_data, test_data, model_name=arguments.arch, model=model, criterion=criterion,
-                          method=arguments.method)
-            print('Zero weights After training ' + str(count_zero_weights(model)))
+            training_loop(train_data, test_data, model=model, criterion=criterion,
+                          num_iterations=num_iterations)
+            print('Zero Weights After training ' + str(count_zero_weights(model)))
+            print("Total Weights " + str(count_total_weights(model)))
+    torch.save(model.state_dict(), path)
 
 
 def count_zero_weights(model):
@@ -258,17 +257,14 @@ def count_zero_weights(model):
     return zeros
 
 
+def count_total_weights(model):
+    weight_sum = 0
+    for name, layer in model.named_parameters():
+        if not layer.requires_grad:
+            num_weights = layer.numel()
+            weight_sum += num_weights
+    return weight_sum
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--arch', default='lenet5', choices=['vgg16', 'classifier', 'lenet5'],
-                        help='Architecture: vgg16 | classifier | '
-                             'lenet5')
-    parser.add_argument('--method', default='custom', choices=['custom', 'magnitude'],
-                        help='Method used to prune:'
-                             'custom | none | '
-                             'magnitude')
-    parser.add_argument('--train', default='false', choices=['false', 'true'],
-                        help='Train model initially before pruning: '
-                             'true | false')
-    args = parser.parse_args()
-    main(arguments=args)
+    main()
