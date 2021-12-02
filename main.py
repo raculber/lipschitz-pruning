@@ -5,7 +5,9 @@ import torch.nn.utils.prune as pytorch_prune
 from models import classifier, lenet5, vgg16, alexnet
 from torch import nn, optim
 from tqdm import tqdm
+import numpy as np
 import argparse
+from convert_conv import conv_to_fc
 import torch
 import torch.utils.data
 
@@ -154,14 +156,6 @@ def sum_of_products_backwards(weights):
         for a_index, after in enumerate(layer):
             for b_index, weight in enumerate(after):
                 weight = abs(weight)
-                if l_index == 3:
-                    print(l_index)
-                    print(weight.shape)
-                    print(weight)
-                if l_index == 4:
-                    print(l_index)
-                    print(weight.shape)
-                    print(weight)
                 if l_index == 0:
                     sops.update({str(l_index) + ',' + str(a_index) + ',' + str(b_index): weight})
                 else:
@@ -179,9 +173,25 @@ def sum_of_products_backwards(weights):
 
 def prune(model, prune_rate):
     weights = []
-    for name, layer in model.named_parameters():
-        if 'weight' in name and 'fc' in name:
-            weights.append(layer)
+
+    index = 0
+    for layer in model.modules():
+        if isinstance(layer, nn.Conv2d):
+            with torch.no_grad():
+                print(layer)
+                if index == 0:
+                    shape = (32, 32)
+                elif index == 1:
+                    shape = (14, 14)
+                elif index == 2:
+                    shape = (5, 5)
+                layer = conv_to_fc(layer, shape)
+                print(layer)
+                weights.append(layer.weight)
+                index += 1
+        elif isinstance(layer, nn.Linear):
+            weights.append(layer.weight)
+
     weights.reverse()  # So that the final layer is layer 0
     # key: coordinates of weight, value: sum of products
     sop_dict = sum_of_products_backwards(weights)
@@ -193,7 +203,7 @@ def prune(model, prune_rate):
     prune_end_index = int(prune_rate * len(sop_dict))
     prune_indices = list(sop_dict)[:prune_end_index]
     with torch.no_grad():
-        for i in prune_indices:
+        for i in tqdm(prune_indices):
             parsed_index = i.split(',')
             parsed_index = [int(i) for i in parsed_index]
             weights[parsed_index[0]][parsed_index[1]][parsed_index[2]] = 0  # set weight to 0
@@ -223,7 +233,9 @@ def main():
                       num_iterations=num_iterations)
         torch.save(model.state_dict(), path)
     model.load_state_dict(torch.load(path))
-    total_weights = count_total_weights(model)
+    # Count number of parameters
+    num_params = sum(param.numel() for param in model.parameters())
+    print(num_params)
     if args.method == 'magnitude':
         for i in range(1, num_iterations + 1):
             prune_rate = (percent ** (1 / i))
@@ -245,8 +257,10 @@ def main():
             print("Prune rate " + str(prune_rate))
             print('Zero weights ' + str(count_zero_weights(model)))
             print("Total Weights " + str(count_total_weights(model)))
-            training_loop(train_data, test_data, model=model, criterion=criterion,
-                          num_iterations=num_iterations)
+            # training_loop(train_data, test_data, model=model, criterion=criterion,
+            #               num_iterations=num_iterations)
+    zero_weights = count_zero_weights(model)
+    print("Weights removed:" + str(zero_weights))
     # torch.save(model.state_dict(), path)
 
 
@@ -265,6 +279,7 @@ def count_total_weights(model):
             num_weights = layer.numel()
             weight_sum += num_weights
     return weight_sum
+
 
 
 if __name__ == "__main__":
