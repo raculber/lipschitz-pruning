@@ -6,9 +6,9 @@ from dataprocess import load_data
 vgg16_transform = transforms.Compose(
     [transforms.Resize((224, 224)), transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
-lenet5_transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor()])
+lenet5_transform = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
-alexnet_transform = transforms.Compose([transforms.Resize((227, 227)), transforms.ToTensor()])
+alexnet_transform = transforms.Compose([transforms.Resize((227, 227)), transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
 
 def load_data(args):

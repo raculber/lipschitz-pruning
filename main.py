@@ -43,7 +43,7 @@ args = parser.parse_args()
 
 def train(train_data, model, criterion, optimizer):
     loss_counter = 0.0
-    for i, (images, labels) in enumerate(train_data):
+    for i, (images, labels) in enumerate(tqdm(train_data, desc="Training data")):
         images = Variable(images).float()
         labels = Variable(labels).float()
         labels = labels.view(labels.shape[0], -1)
@@ -63,7 +63,7 @@ def train(train_data, model, criterion, optimizer):
 
 def train_cnn(train_data, model, criterion, optimizer):
     loss_counter = 0.0
-    for i, (images, labels) in enumerate(train_data):
+    for i, (images, labels) in enumerate(tqdm(train_data, desc="Training data")):
         images = images.to(device)
         labels = labels.to(device)
         optimizer.zero_grad()
@@ -135,7 +135,7 @@ def training_loop(train_data, test_data, model, criterion, num_iterations):
         old_cost = train_cnn(train_data, model, criterion, optimizer)
     else:
         old_cost = train(train_data, model, criterion, optimizer)
-    for _ in tqdm(range(1, args.epochs)):
+    for _ in tqdm(range(1, args.epochs), desc="Epoch"):
         if args.arch == "lenet5" or args.arch == "vgg16" or args.arch == "alexnet":
             new_cost = train_cnn(train_data, model, criterion, optimizer)
         else:
@@ -203,7 +203,7 @@ def prune(model, prune_rate):
     prune_end_index = int(prune_rate * len(sop_dict))
     prune_indices = list(sop_dict)[:prune_end_index]
     with torch.no_grad():
-        for i in tqdm(prune_indices):
+        for i in tqdm(prune_indices, "Pruning indices"):
             parsed_index = i.split(',')
             parsed_index = [int(i) for i in parsed_index]
             weights[parsed_index[0]][parsed_index[1]][parsed_index[2]] = 0  # set weight to 0
